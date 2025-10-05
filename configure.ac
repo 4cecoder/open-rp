@@ -21,12 +21,12 @@ AC_CHECK_PROG([PROG_ZIP], [zip], [zip], [false])
 # Checks for libraries.
 AC_CHECK_LIB([SDL], [SDL_Init], [], [
 	AC_MSG_ERROR([libSDL not found.])])
-AC_CHECK_LIB([SDL_ttf], [TTF_Init], [], [
-	AC_MSG_ERROR([libSDL_ttf not found.])])
-AC_CHECK_LIB([SDL_image], [IMG_LoadPNG_RW], [], [
-	AC_MSG_ERROR([libSDL_image with PNG support not found.])])
-AC_CHECK_LIB([SDL_net], [SDLNet_UDP_Open], [], [
-	AC_MSG_ERROR([libSDL_net not found.])])
+AC_CHECK_LIB([SDL2_ttf], [TTF_Init], [], [
+	AC_MSG_ERROR([libSDL2_ttf not found.])])
+AC_CHECK_LIB([SDL2_image], [IMG_LoadPNG_RW], [], [
+	AC_MSG_ERROR([libSDL2_image with PNG support not found.])])
+AC_CHECK_LIB([SDL2_net], [SDLNet_UDP_Open], [], [
+	AC_MSG_ERROR([libSDL2_net not found.])])
 AC_CHECK_LIB([freetype], [FT_Init_FreeType], [], [
 	AC_MSG_ERROR([libfreetype not found.])])
 AC_CHECK_LIB([crypto], [AES_cbc_encrypt], [], [

@@ -150,7 +150,7 @@ orpUIFrame::orpUIFrame(const wxString& title)
 	wxBoxSizer *frame_sizer = new wxBoxSizer(wxVERTICAL);
 	frame_sizer->AddSpacer(98);
 	wxHyperlinkCtrl *link = new wxHyperlinkCtrl(panel, wxID_ANY,
-		_T("v"PACKAGE_VERSION), _T("http://code.google.com/p/open-rp/"));
+		_T("v" PACKAGE_VERSION), _T("http://code.google.com/p/open-rp/"));
 	link->SetNormalColour(wxColour(0, 134, 174));
 	frame_sizer->Add(link, 0, wxALIGN_RIGHT | wxRIGHT, 5);
 	frame_sizer->Add(lb, 1, wxEXPAND | wxALL, 5);

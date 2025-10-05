@@ -457,7 +457,7 @@ static size_t orpParseStreamData(void *ptr, size_t size, size_t nmemb, void *str
 
 	// Allocate payload
 	packet->pkt.data = new Uint8[packet->pkt.size +
-		FF_INPUT_BUFFER_PADDING_SIZE];
+		AV_INPUT_BUFFER_PADDING_SIZE];
 	if (!packet->pkt.data) {
 		delete packet;
 		delete [] buffer;
@@ -465,7 +465,7 @@ static size_t orpParseStreamData(void *ptr, size_t size, size_t nmemb, void *str
 		return 0;
 	}
 	memset(packet->pkt.data + packet->pkt.size, 0,
-		FF_INPUT_BUFFER_PADDING_SIZE);
+		AV_INPUT_BUFFER_PADDING_SIZE);
 
 	// Copy payload
 	bp += sizeof(struct orpStreamPacketHeader_t);
@@ -553,14 +553,14 @@ static Sint32 orpThreadVideoDecode(void *config)
 
 	SDL_LockMutex(orpAVMutex);
 	AVCodecContext *context = avcodec_alloc_context3(_config->codec);
-	if (avcodec_open(context, _config->codec) < 0) {
+	if (avcodec_open2(context, _config->codec, NULL) < 0) {
 		SDL_UnlockMutex(orpAVMutex);
 		return -1;
 	}
 	SDL_UnlockMutex(orpAVMutex);
 
 	AVFrame *frame;
-	frame = avcodec_alloc_frame();
+	frame = av_frame_alloc();
 
 	struct SwsContext *sws_normal;
 	struct SwsContext *sws_medium;
@@ -568,17 +568,17 @@ static Sint32 orpThreadVideoDecode(void *config)
 	struct SwsContext *sws_fullscreen;
 	sws_normal = sws_getContext(ORP_FRAME_WIDTH, ORP_FRAME_HEIGHT,
 		context->pix_fmt, ORP_FRAME_WIDTH, ORP_FRAME_HEIGHT,
-		PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
+		AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 	sws_medium = sws_getContext(ORP_FRAME_WIDTH, ORP_FRAME_HEIGHT,
 		context->pix_fmt,
 			(int)(ORP_FRAME_WIDTH * 1.5), (int)(ORP_FRAME_HEIGHT * 1.5),
-		PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
+		AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 	sws_large = sws_getContext(ORP_FRAME_WIDTH, ORP_FRAME_HEIGHT,
 		context->pix_fmt, ORP_FRAME_WIDTH * 2, ORP_FRAME_HEIGHT * 2,
-		PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
+		AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 	sws_fullscreen = sws_getContext(ORP_FRAME_WIDTH, ORP_FRAME_HEIGHT,
 		context->pix_fmt, _config->view->fs.w, _config->view->fs.h,
-		PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
+		AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
 
 	Sint32 bytes_decoded, frame_done = 0;
 
@@ -618,8 +618,24 @@ static Sint32 orpThreadVideoDecode(void *config)
 		_config->clock->video = clock - _config->clock_offset;
 		SDL_UnlockMutex(_config->clock->lock);
 
-		bytes_decoded = avcodec_decode_video2(context,
-			frame, &frame_done, &packet->pkt);
+		// New FFmpeg API - send packet and receive frame
+		int ret = avcodec_send_packet(context, &packet->pkt);
+		if (ret < 0) {
+			bytes_decoded = -1;
+			frame_done = 0;
+		} else {
+			ret = avcodec_receive_frame(context, frame);
+			if (ret == 0) {
+				bytes_decoded = packet->pkt.size;
+				frame_done = 1;
+			} else if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				bytes_decoded = 0;
+				frame_done = 0;
+			} else {
+				bytes_decoded = -1;
+				frame_done = 0;
+			}
+		}
 
 		if (bytes_decoded != -1 && frame_done) {
 			SDL_LockMutex(_config->view->lock);
@@ -629,31 +645,34 @@ static Sint32 orpThreadVideoDecode(void *config)
 			}
 			SDL_LockYUVOverlay(_config->view->overlay);
 
-			AVPicture p;
-			p.data[0] = _config->view->overlay->pixels[0];
-			p.data[1] = _config->view->overlay->pixels[2];
-			p.data[2] = _config->view->overlay->pixels[1];
+			uint8_t *data[4];
+			int linesize[4];
+			data[0] = _config->view->overlay->pixels[0];
+			data[1] = _config->view->overlay->pixels[2];
+			data[2] = _config->view->overlay->pixels[1];
+			data[3] = NULL;
 
-			p.linesize[0] = _config->view->overlay->pitches[0];
-			p.linesize[1] = _config->view->overlay->pitches[2];
-			p.linesize[2] = _config->view->overlay->pitches[1];
+			linesize[0] = _config->view->overlay->pitches[0];
+			linesize[1] = _config->view->overlay->pitches[2];
+			linesize[2] = _config->view->overlay->pitches[1];
+			linesize[3] = 0;
 
 			if (_config->view->size == VIEW_NORMAL) {
 				sws_scale(sws_normal,
-					frame->data, frame->linesize, 0, context->height,
-					p.data, p.linesize);
+					(const uint8_t * const*)frame->data, frame->linesize, 0, context->height,
+					data, linesize);
 			} else if (_config->view->size == VIEW_MEDIUM) {
 				sws_scale(sws_medium,
-					frame->data, frame->linesize, 0, context->height,
-					p.data, p.linesize);
+					(const uint8_t * const*)frame->data, frame->linesize, 0, context->height,
+					data, linesize);
 			} else if (_config->view->size == VIEW_LARGE) {
 				sws_scale(sws_large,
-					frame->data, frame->linesize, 0, context->height,
-					p.data, p.linesize);
+					(const uint8_t * const*)frame->data, frame->linesize, 0, context->height,
+					data, linesize);
 			} else if (_config->view->size == VIEW_FULLSCREEN) {
 				sws_scale(sws_fullscreen,
-					frame->data, frame->linesize, 0, context->height,
-					p.data, p.linesize);
+					(const uint8_t * const*)frame->data, frame->linesize, 0, context->height,
+					data, linesize);
 			}
 
 			SDL_Rect rect;
@@ -711,9 +730,9 @@ static Sint32 orpThreadVideoDecode(void *config)
 		delete packet;
 	}
 
-	av_free(frame);
+	av_frame_free(&frame);
 	SDL_LockMutex(orpAVMutex);
-	avcodec_close(context);
+	avcodec_free_context(&context);
 	SDL_UnlockMutex(orpAVMutex);
 	sws_freeContext(sws_normal);
 	sws_freeContext(sws_medium);
@@ -870,13 +889,13 @@ orpAudioFeed_GetFrame:
 		goto orpAudioFeed_GetFrame;
 }
 
-static AVCodecContext *orpInitAudioCodec(AVCodec *codec, Sint32 channels, Sint32 sample_rate, Sint32 bit_rate)
+static AVCodecContext *orpInitAudioCodec(const AVCodec *codec, Sint32 channels, Sint32 sample_rate, Sint32 bit_rate)
 {
 	SDL_LockMutex(orpAVMutex);
-	AVCodecContext *context = avcodec_alloc_context();
-	context->channels = channels;
+	AVCodecContext *context = avcodec_alloc_context3(codec);
+	context->ch_layout.nb_channels = channels;
 	context->sample_rate = sample_rate;
-	if (codec->id == CODEC_ID_ATRAC3) {
+	if (codec->id == AV_CODEC_ID_ATRAC3) {
 		struct atrac3_config_t {
 			Uint16 unk0;	// 2
 			Uint16 unk1lo;	// 4 \ actually an Uint32, but split
@@ -901,8 +920,8 @@ static AVCodecContext *orpInitAudioCodec(AVCodec *codec, Sint32 channels, Sint32
 		context->bit_rate = bit_rate;
 	}
 
-	if (avcodec_open(context, codec) < 0) {
-		if (codec->id == CODEC_ID_ATRAC3) av_free(context->extradata);
+	if (avcodec_open2(context, codec, NULL) < 0) {
+		if (codec->id == AV_CODEC_ID_ATRAC3) av_free(context->extradata);
 		av_free(context);
 		SDL_UnlockMutex(orpAVMutex);
 		orpPrintf("codec context initialization failed.\n");
@@ -926,7 +945,8 @@ static Sint32 orpThreadAudioDecode(void *config)
 		_config->sample_rate, _config->bit_rate))) return -1;
 
 	Sint32 bytes_decoded, frame_size;
-	Uint8 buffer[(AVCODEC_MAX_AUDIO_FRAME_SIZE * 3) / 2];
+	Uint8 buffer[(192000 * 3) / 2];  // Max audio frame size for high-res audio
+	AVFrame *audio_frame = av_frame_alloc();
 
 	struct orpConfigAudioFeed_t feed;
 	feed.channels = _config->channels;
@@ -977,9 +997,31 @@ static Sint32 orpThreadAudioDecode(void *config)
 		delete packet;
 		continue;
 #endif
-		frame_size = sizeof(buffer);
-		bytes_decoded = avcodec_decode_audio3(context,
-			(Sint16 *)buffer, &frame_size, &packet->pkt);
+		// New FFmpeg audio API
+		int ret = avcodec_send_packet(context, &packet->pkt);
+		if (ret < 0) {
+			bytes_decoded = -1;
+			frame_size = 0;
+		} else {
+			ret = avcodec_receive_frame(context, audio_frame);
+			if (ret == 0) {
+				bytes_decoded = packet->pkt.size;
+				// Calculate frame size in bytes
+				frame_size = av_samples_get_buffer_size(NULL, audio_frame->ch_layout.nb_channels,
+					audio_frame->nb_samples, (AVSampleFormat)audio_frame->format, 1);
+				if (frame_size > 0 && frame_size <= (int)sizeof(buffer)) {
+					memcpy(buffer, audio_frame->data[0], frame_size);
+				} else {
+					frame_size = 0;
+				}
+			} else if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+				bytes_decoded = 0;
+				frame_size = 0;
+			} else {
+				bytes_decoded = -1;
+				frame_size = 0;
+			}
+		}
 		if (bytes_decoded != -1 && frame_size) {
 			struct orpAudioFrame_t *audioFrame =
 				new struct orpAudioFrame_t;
@@ -999,9 +1041,9 @@ static Sint32 orpThreadAudioDecode(void *config)
 			decode_errors = 0;
 		} else if (decode_errors > 5) {
 			SDL_LockMutex(orpAVMutex);
-			if (_config->codec->id == CODEC_ID_ATRAC3)
+			if (_config->codec->id == AV_CODEC_ID_ATRAC3)
 				av_free(context->extradata);
-			avcodec_close(context);
+			avcodec_free_context(&context);
 			SDL_UnlockMutex(orpAVMutex);
 			if (!(context = orpInitAudioCodec(
 				_config->codec, _config->channels,
@@ -1016,9 +1058,10 @@ static Sint32 orpThreadAudioDecode(void *config)
 	SDL_PauseAudio(1);
 	SDL_CloseAudio();
 	SDL_DestroyMutex(feed.lock);
+	av_frame_free(&audio_frame);
 	SDL_LockMutex(orpAVMutex);
-	if (_config->codec->id == CODEC_ID_ATRAC3) av_free(context->extradata);
-	avcodec_close(context);
+	if (_config->codec->id == AV_CODEC_ID_ATRAC3) av_free(context->extradata);
+	avcodec_free_context(&context);
 	SDL_UnlockMutex(orpAVMutex);
 	return 0;
 }
@@ -1195,19 +1238,19 @@ OpenRemotePlay::OpenRemotePlay(struct orpConfig_t *config)
 	// Init libcurl
 	curl_global_init(CURL_GLOBAL_WIN32);
 
-	// XXX: Deprecated...
+	// XXX: Deprecated in FFmpeg 4.0+
 	//avcodec_init();
-	// Init libavcodec, load all codecs
-	avcodec_register_all();
+	// Init libavcodec - no longer needed in FFmpeg 4.0+, codecs are auto-registered
+	//avcodec_register_all();
 	av_log_set_callback(orpAVDebug);
 
 	// Initialize the audio/video decoders we need
 	struct orpCodec_t *oc;
-	AVCodec *codec;
+	const AVCodec *codec;
 
-	codec = avcodec_find_decoder(CODEC_ID_H264);
+	codec = avcodec_find_decoder(AV_CODEC_ID_H264);
 	if (!codec) {
-		orpPrintf("Required codec not found: %s\n", "CODEC_ID_H264");
+		orpPrintf("Required codec not found: %s\n", "AV_CODEC_ID_H264");
 		throw -1;
 	}
 	oc = new struct orpCodec_t;
@@ -1215,9 +1258,9 @@ OpenRemotePlay::OpenRemotePlay(struct orpConfig_t *config)
 	oc->codec = codec;
 	this->codec.push_back(oc);
 
-	codec = avcodec_find_decoder(CODEC_ID_MPEG4);
+	codec = avcodec_find_decoder(AV_CODEC_ID_MPEG4);
 	if (!codec) {
-		orpPrintf("Required codec not found: %s\n", "CODEC_ID_MPEG4");
+		orpPrintf("Required codec not found: %s\n", "AV_CODEC_ID_MPEG4");
 		throw -1;
 	}
 	oc = new struct orpCodec_t;
@@ -1229,10 +1272,10 @@ OpenRemotePlay::OpenRemotePlay(struct orpConfig_t *config)
 	if (!codec) {
 		orpPrintf("Warning, preferred codec not found: %s,"
 			" trying built-in AAC support (may not work)\n",
-			"CODEC_ID_AAC (libfaad)");
-		codec = avcodec_find_decoder(CODEC_ID_AAC);
+			"AV_CODEC_ID_AAC (libfaad)");
+		codec = avcodec_find_decoder(AV_CODEC_ID_AAC);
 		if (!codec) {
-			orpPrintf("Required codec not found: %s\n", "CODEC_ID_AAC");
+			orpPrintf("Required codec not found: %s\n", "AV_CODEC_ID_AAC");
 			throw -1;
 		}
 	}
@@ -1241,9 +1284,9 @@ OpenRemotePlay::OpenRemotePlay(struct orpConfig_t *config)
 	oc->codec = codec;
 	this->codec.push_back(oc);
 
-	codec = avcodec_find_decoder(CODEC_ID_ATRAC3);
+	codec = avcodec_find_decoder(AV_CODEC_ID_ATRAC3);
 	if (!codec) {
-		orpPrintf("Required codec not found: %s\n", "CODEC_ID_ATRAC3");
+		orpPrintf("Required codec not found: %s\n", "AV_CODEC_ID_ATRAC3");
 		throw -1;
 	}
 	oc = new struct orpCodec_t;
@@ -1698,7 +1741,7 @@ bool OpenRemotePlay::SetCaption(const char *caption)
 	return quit;
 }
 
-AVCodec *OpenRemotePlay::GetCodec(const string &name)
+const AVCodec *OpenRemotePlay::GetCodec(const string &name)
 {
 	Uint32 i;
 	for (i = 0; i < codec.size(); i++) {
@@ -2845,7 +2888,7 @@ Sint32 OpenRemotePlay::SessionPerform(void)
 	mode.param2 = "1024000";
 	if (ControlPerform(curl, &mode) != 200) return -1;
 
-	AVCodec *videoCodec = GetCodec(
+	const AVCodec *videoCodec = GetCodec(
 		orpGetHeaderValue(HEADER_VIDEO_CODEC, headerList));
 	if (!videoCodec) {
 		orpPrintf("Required video codec not found: %s\n",
@@ -2853,7 +2896,7 @@ Sint32 OpenRemotePlay::SessionPerform(void)
 		DisplayError("Video codec not found!");
 		return -1;
 	}
-	AVCodec *audioCodec = GetCodec(
+	const AVCodec *audioCodec = GetCodec(
 		orpGetHeaderValue(HEADER_AUDIO_CODEC, headerList));
 	if (!audioCodec) {
 		orpPrintf("Required audio codec not found: %s\n",

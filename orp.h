@@ -32,6 +32,18 @@ using namespace std;
 
 #include <SDL/SDL.h>
 #include <SDL/SDL_thread.h>
+
+// SDL compatibility - define SDL_FORCE_INLINE for SDL2 headers
+#ifndef SDL_FORCE_INLINE
+#if defined(__GNUC__)
+#define SDL_FORCE_INLINE static inline __attribute__((always_inline))
+#elif defined(_MSC_VER)
+#define SDL_FORCE_INLINE static __forceinline
+#else
+#define SDL_FORCE_INLINE static inline
+#endif
+#endif
+
 #include <SDL/SDL_image.h>
 #include <SDL/SDL_net.h>
 #include <SDL/SDL_ttf.h>
@@ -344,7 +356,7 @@ struct orpClock_t {
 
 struct orpThreadAudioDecode_t {
 	bool terminate;
-	AVCodec *codec;
+	const AVCodec *codec;
 	Sint32 channels;
 	Sint32 sample_rate;
 	Sint32 bit_rate;
@@ -354,7 +366,7 @@ struct orpThreadAudioDecode_t {
 
 struct orpThreadVideoDecode_t {
 	bool terminate;
-	AVCodec *codec;
+	const AVCodec *codec;
 	Sint32 frame_rate;
 	Uint32 clock_offset;
 	struct orpView_t *view;
@@ -411,7 +423,7 @@ struct orpConfigAudioFeed_t {
 
 struct orpCodec_t {
 	string name;
-	AVCodec *codec;
+	const AVCodec *codec;
 };
 
 class OpenRemotePlay
@@ -454,7 +466,7 @@ protected:
 	bool CreateKeys(const string &nonce,	
 		enum orpAuthType type = orpAUTH_NORMAL);
 	bool SetCaption(const char *caption);
-	AVCodec *GetCodec(const string &name);
+	const AVCodec *GetCodec(const string &name);
 	Sint32 ControlPerform(CURL *curl, struct orpCtrlMode_t *mode);
 	Sint32 SendPadState(Uint8 *pad, Uint32 id,
 		Uint32 &count, Uint32 timestamp, vector<string> &headers);

@@ -252,6 +252,7 @@ int Get_YUV_From_Surface(SDL_Surface * image,SDL_YUVSurface * yuv_surface){
   convert_end =  SDL_GetTicks();
 
   //fprintf(stderr, "conversion time (millisec) = %d\n", convert_end - convert_start);
+  return 0;
 }
 
 

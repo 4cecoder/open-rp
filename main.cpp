@@ -40,7 +40,7 @@
 #include "orp.h"
 #include "base64.h"
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(__APPLE__)
 // We don't want SDL to override our main()
 #undef main
 #endif
