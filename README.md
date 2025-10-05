@@ -1,14 +1,33 @@
 Open Remote Play
 ================
 
-https://github.com/dsokoloski/open-rp
+**macOS Apple Silicon Fork:** https://github.com/4cecoder/open-rp
 
+Original: https://github.com/dsokoloski/open-rp
 Previously: https://code.google.com/p/open-rp/
 
 Wouldn't it be cool if you could run Remote Play from your laptop, desktop, or
 perhaps your phone?
 
 After 2 weeks of hardcore reverse-engineering, now you can!
+
+## macOS M1/M2/M3 Support ✨
+
+This fork adds full support for modern macOS with Apple Silicon! See [README_MACOS.md](README_MACOS.md) for detailed build instructions.
+
+**Quick Start for macOS:**
+```bash
+git clone --recursive https://github.com/4cecoder/open-rp
+cd open-rp
+# See README_MACOS.md for complete build instructions
+```
+
+**What's New in This Fork:**
+- ✅ Updated FFmpeg API from v0.7 → v8.1
+- ✅ SDL2 compatibility layer
+- ✅ Native Apple Silicon (arm64) builds
+- ✅ wxWidgets GUI fully functional
+- ✅ Comprehensive macOS documentation
 
 I would like to thank Dark_AleX for hacking the PSP.  Without his work, ORP
 would not be possible.  I would also like to thank TyRaNiD for psplink and
