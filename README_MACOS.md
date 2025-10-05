@@ -24,7 +24,7 @@ brew install sdl12-compat sdl2_ttf sdl2_image sdl2_net freetype openssl curl ffm
 
 1. **Clone with submodules:**
 ```bash
-git clone --recursive https://github.com/YOUR_USERNAME/open-rp
+git clone --recursive https://github.com/4cecoder/open-rp
 cd open-rp
 ```
 
